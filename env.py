@@ -120,7 +120,7 @@ class EnvSearch(object):
                 x, y = [random.randint(0, self.map_size-1) for _ in range(2)]
                 if self.land_mark_map[x,y] == 0:
                     if x <= self.min_target_pos or x >= self.max_target_pos or \
-                        y <= self.min_target_pos or y >= self. :
+                        y <= self.min_target_pos or y >= self.max_target_pos:
                         temp_target = Target([x,y])
                         self.target_list.append(temp_target)
                         self.land_mark_map[x,y] = 1 # 目标
