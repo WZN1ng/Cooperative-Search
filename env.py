@@ -1,62 +1,48 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from target import Target
 import random
 
-class Agent(object):
-    def __init__(self, pos, view_range):
-        self.pos = pos
-        self.view_range = view_range
-        self.time_step = 0
-        self.reward = 0
-
-class Target(object):
-    def __init__(self, pos):
-        self.pos = pos
+# define some colors
+COLORS = {'blue':[0,0,1], 'red':[1,0,0], 'white':[1,1,1],
+        'black':[1,1,1], 'gray':[0.5,0.5,0.5], 'green':[0,1,0]}
 
 class EnvSearch(object):
-    def __init__(self, map_size, agent_num, view_range, target_num):
+    def __init__(self, map_size, target_num, mode, dict=None):
         self.map_size = map_size
-        self.agent_num = agent_num
-        self.view_range = view_range
         self.target_num = target_num
-        self.reward_list = {'move_cost':-1, 'find_target': 100}
-        self.reward_total = 0
-        self.time_step = 0
+        self.target_find = 0
+        self.reward_list = {'move_cost':-0.1, 'find_target': 100}
+        self.mode = mode
+        if dict:    
+        # circle_num:int, target_empty:[x,y], circle_center:[[x,y],...]
+        # circle_radius:[...], target_num:[...]
+            self.dict = dict
+
+        # show process
+        self.fig = plt.figure()
+        self.gs = GridSpec(1, 3, figure=self.fig)
+        self.ax1 = self.fig.add_subplot(self.gs[0:1, 0:1])
+        self.ax2 = self.fig.add_subplot(self.gs[0:1, 1:2])
+        self.ax3 = self.fig.add_subplot(self.gs[0:1, 2:3])
+
+        # self.cumulative_joint_obs = np.array([])
         self.land_mark_map = np.zeros((self.map_size, self.map_size)) # initialize map
 
         # initialize targets
         self.target_list = []
-        min_target_pos = self.map_size//4
-        max_target_pos = 3*self.map_size//4
-        while len(self.target_list) < self.target_num:
-            temp_pos = [random.randint(0, self.map_size-1) for _ in range(2)]
-            if (self.land_mark_map[temp_pos[0], temp_pos[1]] == 0) and (temp_pos[0] <= min_target_pos or temp_pos[0] >= max_target_pos) \
-                and (temp_pos[1] <= min_target_pos or temp_pos[1] >= max_target_pos):
-                temp_target = Target(temp_pos)
-                self.land_mark_map[temp_pos[0], temp_pos[1]] == 1 # 目标
-                self.target_list.append(temp_target)
+        self.min_target_pos = self.map_size//4
+        self.max_target_pos = 3*self.map_size//4
+        self.reset(mode)
 
-        # initialize agents
-        length_square = int(np.ceil(np.sqrt(self.agent_num)))
-        self.start_pos = [(self.map_size-length_square)//2 for _ in range(2)]
-        self.agent_list = []
-        for i in range(self.start_pos[0], self.start_pos[0]+length_square):
-            if len(self.agent_list) == self.agent_num:
-                break
-            for j in range(self.start_pos[0], self.start_pos[0]+length_square):
-                if len(self.agent_list) == self.agent_num:
-                    break
-                temp_agent = Agent([i,j], self.view_range)
-                self.agent_list.append(temp_agent)
-
-    def get_full_obs(self):     # 全局观测矩阵
+    def get_full_obs(self, agent_list):     # 全局观测矩阵
         obs = np.ones((self.map_size, self.map_size, 3))
-        for target in self.target_list:     # 目标设为蓝色
-            obs[target.pos[0], target.pos[1]] = [0, 0, 1]
-
-        for agent in self.agent_list:     # 智能体设为红色
-            obs[agent.pos[0], agent.pos[1]] = [1, 0, 0]
+        for target in self.target_list:
+            i,j = target.pos
+            obs[i,j] = COLORS['blue']
+        for agent in agent_list:     # 智能体设为红色
+            obs[agent.pos[0], agent.pos[1]] = COLORS['red']
         return obs      
 
     def get_agent_obs(self, agent):     # 智能体观测矩阵
@@ -67,20 +53,20 @@ class EnvSearch(object):
                 x = i + agent.pos[0] - agent.view_range + 1
                 y = j + agent.pos[1] - agent.view_range + 1
 
-                for k in range(self.target_num):
-                    if self.target_list[k].pos[0] == x and self.target_list[k].pos[1] == y:
-                        obs[i, j] = [0, 0, 1]
+                if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size \
+                    and self.land_mark_map[x,y] == 1:
+                    obs[i, j] = COLORS['blue']   # 目标  
 
                 if i == agent.view_range-1 and j == agent.view_range-1:
-                    obs[i, j] = [1, 0, 0]
+                    obs[i, j] = COLORS['red']   # 智能体
 
-                if (agent.view_range - 1 - i)*(agent.view_range - 1 - i)+(agent.view_range - 1 - j)*(agent.view_range - 1 - j) > agent.view_range*agent.view_range:
-                    obs[i, j] = [0.5, 0.5, 0.5]
+                if (agent.view_range - 1 - i)**2+(agent.view_range - 1 - j)**2 > agent.view_range**2:
+                    obs[i, j] = COLORS['gray']  # 未知区域
         return obs
 
-    def get_current_joint_obs(self):    # 当前时刻联合观测矩阵
+    def get_current_joint_obs(self, agent_list):    # 当前时刻联合观测矩阵
         obs = 0.5*np.ones((self.map_size, self.map_size, 3))
-        for agent in self.agent_list:
+        for agent in agent_list:
             temp = self.get_agent_obs(agent)
             size = temp.shape[0]
             for i in range(size):
@@ -90,15 +76,15 @@ class EnvSearch(object):
                     if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
                         if temp[i, j, 0] != 0.5: 
                             obs[x, y] = temp[i, j]
-        for agent in self.agent_list:
+        for agent in agent_list:
             [x,y] = agent.pos
-            obs[x, y] = [1, 0, 0]
+            obs[x, y] = COLORS['red']
         return obs
 
-    def get_cumulative_joint_obs(self, last_obs):   # 累积联合观测矩阵
+    def get_cumulative_joint_obs(self, last_obs, agent_list):   # 累积联合观测矩阵
         if last_obs.size != 0:
             obs = last_obs.copy()
-            for agent in self.agent_list:
+            for agent in agent_list:
                 temp = self.get_agent_obs(agent)
                 size = temp.shape[0]
                 for i in range(size):
@@ -109,36 +95,91 @@ class EnvSearch(object):
                             if temp[i, j, 0] != 0.5 and last_obs[x, y, 0] == 0.5:
                                 obs[x, y] = temp[i, j]
                             if last_obs[x, y, 0] == 1 and last_obs[x, y, 1] == 0 and last_obs[x, y, 2] == 0:
-                                obs[x, y] = [0, 1, 0]   # 将之前的路径涂成绿色
+                                obs[x, y] = COLORS['green']   # 将之前的路径涂成绿色
 
-            for agent in self.agent_list:
+            for agent in agent_list:
                 [x,y] = agent.pos
-                obs[x, y] = [1, 0, 0]
+                obs[x, y] = COLORS['red']
             return obs
         else:
-            return self.get_current_joint_obs()
+            return self.get_current_joint_obs(agent_list)
 
-    def rand_reset_target_pos(self):    # 重设目标位置
-        for k in range(self.target_num):
-            self.target_list[k].pos = [random.randint(0, self.map_size-1) for _ in range(2)]
+    def reset(self, mode, dict=None):    # 重设目标位置
+        # reset targets
+        self.target_list.clear()
 
-    def agent_step(self, agent_act_list):   # 智能体行动
-        if len(agent_act_list) != self.agent_num:
-            return
-        for k in range(self.agent_num):
-            if agent_act_list[k] == 0:      # 向上
-                if self.agent_list[k].pos[0] > 0:
-                    self.agent_list[k].pos[0] = self.agent_list[k].pos[0] - 1
-            elif agent_act_list[k] == 1:    # 向下
-                if self.agent_list[k].pos[0] < self.map_size - 1:
-                    self.agent_list[k].pos[0] = self.agent_list[k].pos[0] + 1
-            elif agent_act_list[k] == 2:    # 向左
-                if self.agent_list[k].pos[1] > 0:
-                    self.agent_list[k].pos[1] = self.agent_list[k].pos[1] - 1
-            elif agent_act_list[k] == 3:    # 向右
-                if self.agent_list[k].pos[1] < self.map_size - 1:
-                    self.agent_list[k].pos[1] = self.agent_list[k].pos[1] + 1
+        if mode == 0:   # 目标完全随机分布
+            while len(self.target_list) < self.target_num:
+                x, y = [random.randint(0, self.map_size-1) for _ in range(2)]
+                temp_target = Target([x,y])
+                self.target_list.append(temp_target)
+                self.land_mark_map[x,y] = 1 # 目标
 
-    def step(self, agent_act_list):     # 环境迭代
-        self.agent_step(agent_act_list)
-        
+        elif mode == 1:   # 目标分布在地图边缘
+            while len(self.target_list) < self.target_num:
+                x, y = [random.randint(0, self.map_size-1) for _ in range(2)]
+                if self.land_mark_map[x,y] == 0:
+                    if x <= self.min_target_pos or x >= self.max_target_pos or \
+                        y <= self.min_target_pos or y >= self. :
+                        temp_target = Target([x,y])
+                        self.target_list.append(temp_target)
+                        self.land_mark_map[x,y] = 1 # 目标
+
+        elif mode == 2:     # 更大概率分布在指定园内
+            for i,(x,y) in enumerate(self.dict['circle_center']):
+                # 中间过程
+                tmp_xl = x-self.dict['circle_radius'][i]
+                tmp_xh = x+self.dict['circle_radius'][i]
+                tmp_yl = y-self.dict['circle_radius'][i]
+                tmp_yh = y+self.dict['circle_radius'][i]
+                for _ in range(self.dict['target_num'][i]):
+                    pos_x = random.randint(max(tmp_xl,0), min(tmp_xh,self.map_size-1))
+                    pos_y = random.randint(max(tmp_yl,0), min(tmp_yh,self.map_size-1))
+                    temp_target = Target([pos_x,pos_y])
+                    self.target_list.append(temp_target)
+                    self.land_mark_map[pos_x,pos_y] = 1
+
+        # reset parameter
+        self.cumulative_joint_obs = np.array([])
+
+    def agent_step(self, agent, act):   # 智能体行动
+        if act == 0 and agent.pos[0] > 0:      # 向上
+            agent.pos[0] -= 1
+        elif act == 1 and agent.pos[0] < self.map_size - 1:     # 向下
+            agent.pos[0] += 1
+        elif act == 2 and agent.pos[1] > 0:     # 向左
+            agent.pos[1] -= 1
+        elif act == 3 and agent.pos[1] < self.map_size - 1:     # 向右
+            agent.pos[1] += 1
+
+    def step(self, agent, act):     # 环境迭代
+        done = False
+        info = None
+        self.agent_step(agent, act)
+        agent.time_step += 1
+        reward = self.reward_list['move_cost']
+        obs = self.get_agent_obs(agent)
+        size = obs.shape[0]
+
+        for target in self.target_list:
+            i, j = target.pos
+            x = i - agent.pos[0] + agent.view_range - 1
+            y = j - agent.pos[1] + agent.view_range - 1
+            if x >= 0 and x < size and y >= 0 and y < size and target.find == False \
+                and obs[x,y,0] == 0 and obs[x,y,1] == 0 and obs[x,y,2] == 1:    # 蓝色
+                reward += self.reward_list['find_target']
+                target.find = True
+                self.target_find += 1
+
+        if self.target_find == self.target_num:
+            done = True
+        return obs, reward, done, info
+
+    def render(self, agent_list):   # 绘图
+        plt.cla()
+        self.ax1.imshow(self.get_full_obs(agent_list))
+        self.ax2.imshow(self.get_current_joint_obs(agent_list))
+        self.cumulative_joint_obs = self.get_cumulative_joint_obs(self.cumulative_joint_obs, agent_list)
+        self.ax3.imshow(self.cumulative_joint_obs)
+        plt.draw()
+        plt.pause(0.1)
