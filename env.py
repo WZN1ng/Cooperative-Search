@@ -13,7 +13,7 @@ class EnvSearch():
         self.map_size = map_size
         self.target_num = target_num
         self.target_find = 0
-        self.reward_list = {'move_cost':-0.4, 'find_target': 40, 'dist_reward_1':0.5, 'dist_reward_2':0.8}
+        self.reward_list = {'move_cost':-1, 'find_target': 100, 'wall_punish':-5, 'explore_reward':0.1}
         self.mode = mode
         self.obs_list = []
         if dict:    
@@ -50,15 +50,20 @@ class EnvSearch():
     def get_agent_obs(self, agent, idx):     # 智能体观测矩阵
         obs_size = 2 * agent.view_range - 1
         obs = np.zeros((obs_size, obs_size))
+        count = 0
         for i in range(obs_size):
             for j in range(obs_size):
                 x = i + agent.pos[0] - agent.view_range + 1
                 y = j + agent.pos[1] - agent.view_range + 1
-                if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size \
-                    and self.land_mark_map[x,y] == 1:
-                    obs[i,j] = 1   # 目标  
-                if (agent.view_range - 1 - i)**2+(agent.view_range - 1 - j)**2 > agent.view_range**2:
+                if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
+                    if self.land_mark_map[x,y] == 1:
+                        obs[i,j] = 1   # 目标
+                    elif self.land_mark_map[x,y] == 0:
+                        self.land_mark_map[x,y] = 
+                
+                elif (agent.view_range - 1 - i)**2+(agent.view_range - 1 - j)**2 > agent.view_range**2:
                     obs[i,j] = 0.5   # 未知区域
+                    
         if idx < len(self.obs_list):
             self.obs_list[idx] = obs
         else:
@@ -173,19 +178,28 @@ class EnvSearch():
     def agent_step(self, agent, act):   # 智能体行动
         if act == 0 and agent.pos[0] > 0:      # 向上
             agent.pos[0] -= 1
-        elif act == 1 and agent.pos[0] < self.map_size - 1:     # 向下
-            agent.pos[0] += 1
-        elif act == 2 and agent.pos[1] > 0:     # 向左
+            return True
+        elif act == 1 and agent.pos[1] > 0:     # 向左
             agent.pos[1] -= 1
+            return True
+        elif act == 2 and agent.pos[0] < self.map_size - 1:     # 向下
+            agent.pos[0] += 1
+            return True
         elif act == 3 and agent.pos[1] < self.map_size - 1:     # 向右
             agent.pos[1] += 1
+            return True
+        else:
+            return False # 撞墙 移动失败
 
     def step(self, idx, agent, act):     # 环境迭代
         done = False
         info = None
-        self.agent_step(agent, act)
-        agent.time_step += 1
         reward = self.reward_list['move_cost']
+
+        if not self.agent_step(agent, act):
+            reward += self.reward_list['wall_punish']
+
+        agent.time_step += 1
         obs = self.get_agent_obs(agent, idx)
         size = obs.shape[0]
 
@@ -200,13 +214,7 @@ class EnvSearch():
                 self.target_find += 1
         
         # 给予阶段性奖励，鼓励探索
-        # midx, midy = self.map_size/2, self.map_size/2
-        # x,y = agent.pos
-        # dist = np.sqrt((x-midx)**2+(y-midy)**2) 
-        # if dist >= self.map_size/6 and dist < self.map_size/3:
-        #     reward += self.reward_list['dist_reward_1']
-        # elif dist >= self.map_size/3:
-        #     reward += self.reward_list['dist_reward_2']
+
 
         if self.target_find == self.target_num:
             done = True

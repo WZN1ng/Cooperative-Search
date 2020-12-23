@@ -15,7 +15,7 @@ class Agent():
 
     EPS_START = 0.9
     EPS_END = 0.05
-    EPS_DECAY = 200
+    EPS_DECAY = 50
 
     def __init__(self, pos, view_range, map_size):
         self.pos = pos
@@ -26,27 +26,30 @@ class Agent():
         self.reward = 0
 
         # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DQN(view_range)
+        self.model = DQN()
         self.optimizer = optim.RMSprop(self.model.parameters())
         self.loss_function = nn.MSELoss()
 
-    def select_action(self, obs):
-        sample = np.random.random(1)
-        eps_threshold = self.EPS_END+(self.EPS_START-self.EPS_END)*np.exp(-1.*self.time_step/self.EPS_DECAY)
-        self.time_step += 1
+    def select_action(self, mode):  # mode=0 随机+模型   mode=1 模型
+        if mode == 0:   # 随机探索和模型结合
+            sample = np.random.random(1)
+            eps_threshold = self.EPS_END+(self.EPS_START-self.EPS_END)*np.exp(-1.*self.time_step/self.EPS_DECAY)
+            self.time_step += 1
 
-        pos = np.array([x/self.map_size for x in self.pos])
-        if sample > eps_threshold:
+        # pos = np.array([x/self.map_size for x in self.pos])
+        if mode == 1 or sample > eps_threshold: # mode = 1模型
             # print(obs.shape)
-            obs = obs.astype(np.float32)
-            obs = torch.from_numpy(obs)
-            view = 2*self.view_range-1
-            obs = obs.reshape((-1,1,view,view))
+            # obs = obs.astype(np.float32)
+            # obs = torch.from_numpy(obs)
+            # view = 2*self.view_range-1
+            # obs = obs.reshape((-1,1,view,view))
+            pos = np.array(self.pos)
             pos = pos.astype(np.float32)
             pos = torch.from_numpy(pos)
             
-            prob = self.model(Variable(obs), Variable(pos))
+            prob = self.model(Variable(pos))
             prob = prob.detach().numpy()
+            # print(prob)
             act = np.argmax(prob)
             # print('prob:{}  act:{}'.format(prob, act))
             return act

@@ -8,15 +8,17 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from tqdm import tqdm
+import os
 
 MAP_SIZE = 50
 AGENT_NUM = 5
 VIEW_RANGE = 6
-TARGET_NUM = 9
+TARGET_NUM = 20
 
 BATCH_SIZE = 32
-NUM_EPISODES = 100
-GAMMA = 0.999
+NUM_EPISODES = 40
+GAMMA = 0.9
+REWARD_THRES = -500
 
 # initial agent
 def initial_agents(map_size, agent_num, view_range, mode):
@@ -47,15 +49,11 @@ def collect_memory(agent_list):
             agent.reset()
         # if len(memory) % 1000 == 0:
             # print('memory len: {}/{}'.format(len(memory), Agent.CAPACITY))
-        while total_reward > -500:
+        while True:
             done = False
             for i,agent in enumerate(agent_list):
-                if len(last_obs) == AGENT_NUM:
-                    act = agent.select_action(last_obs[i])
-                else:
-                    obs_tmp = np.zeros((2*VIEW_RANGE-1, 2*VIEW_RANGE-1))
-                    act = agent.select_action(obs_tmp)
-                pos = np.array([x/agent.map_size for x in agent.pos])   # 之前的位置
+                act = agent.select_action(0)
+                pos = np.array(agent.pos)   # 之前的位置
 
                 obs, r, d, _ = env.step(i, agent, act)  # 与环境交互
 
@@ -68,7 +66,7 @@ def collect_memory(agent_list):
                 
                 # 存储经验
                 if len(last_obs) == AGENT_NUM:
-                    next_pos = np.array([x/agent.map_size for x in agent.pos])    # 之后的位置
+                    next_pos = np.array(agent.pos)    # 之后的位置
                     # next_pos = next_pos.astype(np.float32)
                     # next_pos = torch.from_numpy(next_pos)
                     if not agent.store_transition(last_obs[i], pos, act, obs, next_pos, r):
@@ -88,7 +86,7 @@ def collect_memory(agent_list):
                 break
 
 # run
-def test(agent_list, env):
+def test(agent_list, env, mode):
     print('test model...')
     env.reset(3, dict)
     for agent in agent_list:
@@ -99,11 +97,12 @@ def test(agent_list, env):
     done = False
     while True:
         for i,agent in enumerate(agent_list):
-            if len(last_obs) == AGENT_NUM:
-                act = agent.select_action(last_obs[i])
-            else:
-                obs_tmp = np.zeros((2*VIEW_RANGE-1, 2*VIEW_RANGE-1))
-                act = agent.select_action(obs_tmp)
+            # if len(last_obs) == AGENT_NUM:
+            #     act = agent.select_action(last_obs[i], mode)
+            # else:
+            #     obs_tmp = np.zeros((2*VIEW_RANGE-1, 2*VIEW_RANGE-1))
+            #     act = agent.select_action(obs_tmp, mode)
+            act = agent.select_action(mode)
             # print(i, act)
             obs, r, d, _ = env.step(i, agent, act)
             if len(last_obs) < AGENT_NUM:
@@ -123,7 +122,7 @@ def test(agent_list, env):
 # train agent model
 def model_train(agent_list, device):
     memory = agent_list[0].memory
-    view = 2*agent_list[0].view_range-1
+    # view = 2*agent_list[0].view_range-1
     if len(memory) < BATCH_SIZE:
         return False
 
@@ -132,27 +131,27 @@ def model_train(agent_list, device):
         batch = memory.Transition(*zip(*transitions))
 
         # print(batch.reward, batch.action)
-        non_final_mask = torch.tensor(tuple(map(lambda s:s is not None, batch.next_obs)),dtype=torch.bool)
-        non_final_next_obs = torch.cat([torch.FloatTensor(s.reshape(1,view,view)) for s in batch.next_obs if s is not None])
-        non_final_next_pos = torch.cat([torch.FloatTensor(s) for s in batch.next_pos if s is not None])
+        # non_final_mask = torch.tensor(tuple(map(lambda s:s is not None, batch.next_obs)),dtype=torch.bool)
+        # non_final_next_obs = torch.cat([torch.FloatTensor(s.reshape(1,view,view)) for s in batch.next_obs if s is not None])
+        # non_final_next_pos = torch.cat([torch.FloatTensor(s) for s in batch.next_pos if s is not None])
         # obs_batch = torch.cat([torch.FloatTensor(s.reshape(1,view,view)) for s in batch.obs])
         # pos_batch = torch.cat([torch.FloatTensor(s) for s in batch.pos])
         # act_batch = [torch.IntTensor(s) for s in batch.action]
         # print(act_batch)
         # reward_batch = [torch.FloatTensor(s) for s in batch.reward]
         
-        obs_batch = Variable(torch.from_numpy(np.array(batch.obs).astype(np.float32)).reshape((BATCH_SIZE,1,view,view)))
+        # obs_batch = Variable(torch.from_numpy(np.array(batch.obs).astype(np.float32)).reshape((BATCH_SIZE,1,view,view)))
         pos_batch = Variable(torch.from_numpy(np.array(batch.pos).astype(np.float32)))
         act_batch = Variable(torch.LongTensor(batch.action))
-        nobs_batch = Variable(torch.from_numpy(np.array(batch.next_obs).astype(np.float32)).reshape((BATCH_SIZE,1,view,view)))
+        # nobs_batch = Variable(torch.from_numpy(np.array(batch.next_obs).astype(np.float32)).reshape((BATCH_SIZE,1,view,view)))
         npos_batch = Variable(torch.from_numpy(np.array(batch.next_pos).astype(np.float32)))
         reward_batch = Variable(torch.FloatTensor(batch.reward))
         # print(reward_batch.shape, act_batch.shape)
         
         agent.optimizer.zero_grad()
-        q0 = agent.model(obs_batch, pos_batch)
+        q0 = agent.model(pos_batch)
         # print(state_action_values)
-        q1 = agent.model(nobs_batch, npos_batch).detach()
+        q1 = agent.model(npos_batch).detach()
         # print(torch.max(q1,dim=1)[0].shape)
         q1 = GAMMA*(reward_batch+torch.max(q1,dim=1)[0])
         # print(torch.gather(q0, dim=1, index=act_batch.unsqueeze(1))[:,0].shape)
@@ -164,20 +163,14 @@ def model_train(agent_list, device):
 
     return True
 
-if __name__ == '__main__':
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
-    agent_list = initial_agents(MAP_SIZE, AGENT_NUM, VIEW_RANGE, 1)     # 生成智能体
-    dict = {'circle_num':3, 'circle_center':[[4,44],[40,41],[42,3]],
-            'circle_radius':[12,12,8],'target_num':[3,4,2],'filename':'targets.txt'}
-    env = EnvSearch(MAP_SIZE, TARGET_NUM, 3, dict)      # 生成环境
-    # env.save_target('targets2.txt')
-    
+def train(agent_list, env):
     collect_memory(agent_list)
+    device = 'cpu'
 
     # 开始训练
     print('training...')
-    for i_episode in tqdm(range(NUM_EPISODES)):
+    # for i_episode in tqdm(range(NUM_EPISODES)):
+    for i_episode in range(NUM_EPISODES):
         # initialize
         env.reset(3, dict)
         for agent in agent_list:
@@ -186,17 +179,13 @@ if __name__ == '__main__':
         last_obs = []
         total_reward = 0
         done = False
-        while total_reward > -100:
+        while total_reward > REWARD_THRES:
             # 训练
             model_train(agent_list, device)
 
             # 运行
             for i,agent in enumerate(agent_list):
-                if len(last_obs) == AGENT_NUM:
-                    act = agent.select_action(last_obs[i])
-                else:
-                    obs_tmp = np.zeros((2*VIEW_RANGE-1, 2*VIEW_RANGE-1))
-                    act = agent.select_action(obs_tmp)
+                act = agent.select_action(1)
                 # print(i, act)
                 obs, r, d, _ = env.step(i, agent, act)
                 if len(last_obs) < AGENT_NUM:
@@ -210,15 +199,41 @@ if __name__ == '__main__':
             # env.render(agent_list, total_reward)
             if done:
                 break
-        # if done:
-        #     print('episode:{}  done:{}  target_found:{}/{}  total_reward:{:.0f}'.format(i_episode, done, env.target_find, TARGET_NUM, total_reward))
-    
-    # 保存模型参数
-    root = './models/'
+        if env.target_find:
+            print('episode:{}  done:{}  target_found:{}/{}  total_reward:{:.0f}'.format(i_episode, done, env.target_find, TARGET_NUM, total_reward))
+
+# 保存模型参数
+def save_model_params(agent_list):
+    root = os.getcwd()+'/models/'
+    folder = '{}X{}_{}targets_{}agents'.format(MAP_SIZE,MAP_SIZE,TARGET_NUM,AGENT_NUM)
+    root = root + folder + '/'
+    if not os.path.exists(root):
+        os.makedirs(root)
     for i,agent in enumerate(agent_list):
-        file_root = root+'dqn_model_'+str(i)+'.pkl'
+        file_root = root+'dqn_model_'+str(i)+'.pkl'   
         agent.save_model(file_root)
-    test(agent_list, env)
+
+if __name__ == '__main__':
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = "cpu"
+    agent_list = initial_agents(MAP_SIZE, AGENT_NUM, VIEW_RANGE, 1)     # 生成智能体
+    dict = {'circle_num':3, 'circle_center':[[4,44],[40,41],[42,3]],
+            'circle_radius':[12,12,8],'target_num':[6,9,5],'filename':'targets2.txt'}
+    env = EnvSearch(MAP_SIZE, TARGET_NUM, 3, dict)      # 生成环境
+    # env.save_target('targets2.txt')   # 保存目标
+
+    # 训练模型
+    train(agent_list, env)
+    save_model_params(agent_list)
+    test(agent_list, env, 1)
+
+    # 展示模型
+    # root = './models/50X50_20targets_5agents/'
+    # for i,agent in enumerate(agent_list):
+    #     filename = 'dqn_model_'+str(i)+'.pkl'
+    #     agent.load_model(root+filename)
+    # test(agent_list, env, 1)
+
 
 
 
