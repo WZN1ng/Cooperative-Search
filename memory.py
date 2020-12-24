@@ -3,20 +3,20 @@ import random
 from collections import namedtuple
 
 class MemoryReplay():
-    Transition = namedtuple('Transition',
-                        ('obs','pos','action','next_obs','next_pos','reward'))
+    # Transition = namedtuple('Transition',
+    #                     ('state','action','next_state','reward'))
                         
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
         self.position = 0
 
-    def push(self, *args):     # 保存经验
+    def push(self, state, action, next_state, reward):     # 保存经验   若已满则按顺序覆盖
         if len(self.memory) == self.capacity:
-            return False
-        self.memory.append(self.Transition(*args))
+            self.memory[self.position] = [state, action, next_state, reward]
+        else:
+            self.memory.append([state, action, next_state, reward])
         self.position = (self.position+1) % self.capacity
-        return True
 
     def sample(self, batch_size):   # 抽取经验
         return random.sample(self.memory, batch_size)
@@ -30,3 +30,9 @@ class MemoryReplay():
 
     def __len__(self):
         return len(self.memory)
+
+    def is_full(self):
+        if len(self.memory) == self.capacity:
+            return True
+        else:
+            return False

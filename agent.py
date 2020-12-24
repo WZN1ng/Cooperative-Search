@@ -10,12 +10,13 @@ import numpy as np
 from copy import deepcopy
 
 class Agent():
-    CAPACITY = 10000
+    CAPACITY = 2000
     memory = MemoryReplay(CAPACITY)
 
     EPS_START = 0.9
     EPS_END = 0.05
     EPS_DECAY = 50
+    EPS_THRES = 0.2
 
     def __init__(self, pos, view_range, map_size):
         self.pos = pos
@@ -24,52 +25,47 @@ class Agent():
         self.map_size = map_size
         self.time_step = 0
         self.reward = 0
-
-        # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = DQN()
-        self.optimizer = optim.RMSprop(self.model.parameters())
-        self.loss_function = nn.MSELoss()
+        self.cumu_obs = np.array([])
+        # self.curr_obs = None
+        self.model = DQN(self.memory)
 
     def select_action(self, mode):  # mode=0 随机+模型   mode=1 模型
-        if mode == 0:   # 随机探索和模型结合
+        if self.cumu_obs.size == 0:
+            act = np.random.randint(0,4)
+        elif mode == 0:   # 随机探索和模型结合
             sample = np.random.random(1)
-            eps_threshold = self.EPS_END+(self.EPS_START-self.EPS_END)*np.exp(-1.*self.time_step/self.EPS_DECAY)
-            self.time_step += 1
+            # eps_threshold = self.EPS_END+(self.EPS_START-self.EPS_END)*np.exp(-1.*self.time_step/self.EPS_DECAY)
+            if sample > self.EPS_THRES: # mode = 1模型
+                probs = self.model.get_probs(torch.FloatTensor(self.cumu_obs)).detach().numpy()
+                act = np.argmax(probs)
+                # print(probs)
+            else:
+                act = np.random.randint(0,4)
+        else:   # mode == 1
+            probs = self.model.get_probs(torch.FloatTensor(self.cumu_obs)).detach().numpy()
+            act = np.argmax(probs)
+            # print(probs)
+        return act
 
-        # pos = np.array([x/self.map_size for x in self.pos])
-        if mode == 1 or sample > eps_threshold: # mode = 1模型
-            # print(obs.shape)
-            # obs = obs.astype(np.float32)
-            # obs = torch.from_numpy(obs)
-            # view = 2*self.view_range-1
-            # obs = obs.reshape((-1,1,view,view))
-            pos = np.array(self.pos)
-            pos = pos.astype(np.float32)
-            pos = torch.from_numpy(pos)
-            
-            prob = self.model(Variable(pos))
-            prob = prob.detach().numpy()
-            # print(prob)
-            act = np.argmax(prob)
-            # print('prob:{}  act:{}'.format(prob, act))
-            return act
-        else:
-            return np.random.randint(0,4)
-
-    def store_transition(self, obs, pos, action, next_obs, next_pos, reward):
-        return self.memory.push(obs, pos, action, next_obs, next_pos, reward)
+    def store_transition(self, state, action, next_state, reward):
+        return self.memory.push(state, action, next_state, reward)
 
     def reset(self):
         self.pos = list(self.START_POS)
         self.time_step = 0
         self.reward = 0
+        self.cumu_obs = np.array([])
 
-    def save_model(self, filename):
-        torch.save(self.model.state_dict(), filename)
+    def save_model(self, fileroot1, fileroot2):
+        self.model.save_state_dict(fileroot1, fileroot2)
 
-    def load_model(self, filename):
-        self.model.load_state_dict(torch.load(filename))
+    def load_model(self, fileroot1, fileroot2):
+        self.model.load_state_dict(fileroot1, fileroot2)
 
-    
-
-    
+if __name__ == "__main__":
+     a = Agent([23,24], 6, 50)
+     for _ in range(50):
+        a.store_transition(np.ones((50,50)), 1, np.zeros((50,50)), -10)
+     s = a.memory.sample(3)
+     batch = a.memory.Transition(*zip(*s))
+    #  print(batch.action)
