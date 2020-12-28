@@ -14,11 +14,12 @@ class EnvSearch():
         self.map_size = map_size
         self.target_num = target_num
         self.target_find = 0
-        self.reward_list = {'find_target': 100, 'stay_punish':-50, 'explore_reward':0.2}
+        self.reward_list = {'find_target': 10, 'stay_punish':-50}
         self.total_reward = 0
         self.curr_reward = 0
-        self.explore_num = 0
+        # self.explore_num = 0
         self.mode = mode
+        self.freq_map = np.zeros((map_size, map_size))   # 频率矩阵
         self.obs_list = []  # 智能体独自当前观测矩阵
         # self.cumu_obs_list = []   # 所有智能体的独自累积观测矩阵
         if dict:    
@@ -32,7 +33,7 @@ class EnvSearch():
         self.ax1 = self.fig.add_subplot(self.gs[0:1, 0:1])
         self.ax2 = self.fig.add_subplot(self.gs[0:1, 1:2])
         self.ax3 = self.fig.add_subplot(self.gs[0:1, 2:3])
-        self.gif = []
+        # self.gif = []
 
         # self.cumulative_joint_obs = np.array([])
         self.land_mark_map = np.zeros((self.map_size, self.map_size)) # initialize map 0：空白  1：目标
@@ -83,32 +84,32 @@ class EnvSearch():
                             obs[x,y] = obs_temp[i,j]
         return obs
     
-    def get_cumulative_agent_obs(self, idx, agent):   # 单个智能体的累积观测
-        curr_obs = self.obs_list[idx]     # 获取当前观测
-        size = 2 * agent.view_range - 1
-        posx,posy = agent.pos
-        if agent.cumu_obs.size:
-            obs = agent.cumu_obs.copy()
-            for i in range(size):
-                for j in range(size):
-                    x = i + posx - agent.view_range + 1
-                    y = j + posy - agent.view_range + 1
-                    if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
-                        if curr_obs[i,j] != 0.5 and obs[x,y] == 0.5:
-                            obs[x,y] = curr_obs[i,j]
-            agent.cumu_obs = obs        # 将累积观测存入智能体中
-            # self.cumu_obs_list[i] = obs
-        else:
-            obs = 0.5*np.ones((self.map_size, self.map_size))   # 初始化
-            for i in range(size):
-                for j in range(size):
-                    x = i + posx - agent.view_range + 1
-                    y = j + posy - agent.view_range + 1
-                    if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
-                        if curr_obs[i,j] != 0.5:
-                            obs[x,y] = curr_obs[i,j]
-            agent.cumu_obs = obs
-            # self.cumu_obs_list.append(obs)  # 加入列表
+    # def get_cumulative_agent_obs(self, idx, agent):   # 单个智能体的累积观测
+    #     curr_obs = self.obs_list[idx]     # 获取当前观测
+    #     size = 2 * agent.view_range - 1
+    #     posx,posy = agent.pos
+    #     if agent.cumu_obs.size:
+    #         obs = agent.cumu_obs.copy()
+    #         for i in range(size):
+    #             for j in range(size):
+    #                 x = i + posx - agent.view_range + 1
+    #                 y = j + posy - agent.view_range + 1
+    #                 if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
+    #                     if curr_obs[i,j] != 0.5 and obs[x,y] == 0.5:
+    #                         obs[x,y] = curr_obs[i,j]
+    #         agent.cumu_obs = obs        # 将累积观测存入智能体中
+    #         # self.cumu_obs_list[i] = obs
+    #     else:
+    #         obs = 0.5*np.ones((self.map_size, self.map_size))   # 初始化
+    #         for i in range(size):
+    #             for j in range(size):
+    #                 x = i + posx - agent.view_range + 1
+    #                 y = j + posy - agent.view_range + 1
+    #                 if x >= 0 and x < self.map_size and y >= 0 and y < self.map_size:
+    #                     if curr_obs[i,j] != 0.5:
+    #                         obs[x,y] = curr_obs[i,j]
+    #         agent.cumu_obs = obs
+    #         # self.cumu_obs_list.append(obs)  # 加入列表
 
     def get_cumulative_joint_obs(self, last_obs, agent_list):   # 累积联合观测矩阵   -1：智能体  0：空白   0.5：未知   1：目标   2：路径
         if last_obs.size != 0:
@@ -201,7 +202,8 @@ class EnvSearch():
         self.cumulative_joint_obs = np.array([])
         # self.cumu_obs_list.clear()
         self.obs_list.clear()
-        self.gif.clear()
+        # self.gif.clear()
+        self.freq_map = np.zeros((self.map_size, self.map_size))
         self.target_find = 0
         self.total_reward = 0
         self.curr_reward = 0
@@ -226,12 +228,18 @@ class EnvSearch():
     def step(self, agent_list, act_list):     # 环境迭代
         done = False
         info = None
+        self.curr_reward = 0
 
         if len(agent_list) != len(act_list):
             return False
 
         for i,agent in enumerate(agent_list):
+            if agent.time_step == 0:
+                x,y = agent.pos
+                self.freq_map[x,y] += 1
             self.agent_step(agent, act_list[i])
+            x,y = agent.pos
+            self.freq_map[x,y] += 1
 
         for idx,agent in enumerate(agent_list):
             agent.time_step += 1
@@ -244,18 +252,18 @@ class EnvSearch():
                 y = j - agent.pos[1] + agent.view_range - 1
                 if x >= 0 and x < size and y >= 0 and y < size and target.find == False \
                     and obs[x,y] == 1:    # 蓝色
-                    # reward += self.reward_list['find_target']
+                    self.curr_reward += self.reward_list['find_target']
                     target.find = True
                     self.target_find += 1
-        for i,agent in enumerate(agent_list):
-            self.get_cumulative_agent_obs(i,agent)
+        # for i,agent in enumerate(agent_list):
+        #     self.get_cumulative_agent_obs(i,agent)
         self.cumulative_joint_obs = self.get_cumulative_joint_obs(self.cumulative_joint_obs, agent_list)    # 更新累积矩阵
 
         explore_num = self.get_explore_num()
         if explore_num == 0:
-            self.curr_reward = self.reward_list['stay_punish']
-        else:
-            self.curr_reward = self.reward_list['explore_reward']*explore_num
+            self.curr_reward += self.reward_list['stay_punish']
+        x,y = agent_list[0].pos
+        self.curr_reward += 1/self.freq_map[x,y]
         self.total_reward += self.curr_reward
 
         for agent in agent_list:
