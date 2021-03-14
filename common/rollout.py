@@ -29,6 +29,7 @@ class RolloutWorker:
         step = 0
         episode_reward = 0  # cumulative rewards
         last_action = np.zeros((self.args.n_agents, self.args.n_actions))
+        # if self.args.alg == 'qmix':
         self.agents.policy.init_hidden(1)
 
         # epsilon
@@ -44,8 +45,11 @@ class RolloutWorker:
             obs = self.env.get_obs()
             state = self.env.get_state()
             actions, avail_actions, actions_onehot = [], [], []
+            # if step % 100 == 0:
+            #     print(evaluate, step, epsilon)
             for agent_id in range(self.n_agents):
                 avail_action = self.env.get_avail_agent_actions(agent_id)
+                # print(obs.shape, last_action.shape)
                 action = self.agents.choose_action(obs[agent_id], last_action[agent_id], agent_id,
                                                        avail_action, epsilon, evaluate)
                 # generate onehot vector of th action
@@ -116,8 +120,6 @@ class RolloutWorker:
             episode[key] = np.array([episode[key]])
         if not evaluate:
             self.epsilon = epsilon
-        if self.args.alg == 'maven':
-            episode['z'] = np.array([maven_z.copy()])
         if evaluate and episode_num == self.args.evaluate_epoch - 1:
             self.env.close()
         return episode, episode_reward, win_tag
@@ -131,6 +133,7 @@ class RolloutWorker:
         step = 0
         episode_reward = 0  # cumulative rewards
         last_action = np.zeros((self.args.n_agents, self.args.n_actions))
+        # if self.args.alg == 'qmix':
         self.agents.policy.init_hidden(1)
 
         epsilon = 0

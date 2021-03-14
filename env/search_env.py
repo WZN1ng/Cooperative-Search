@@ -43,6 +43,7 @@ class SearchEnv():
 
         # reward
         self.REWARD_FIND = 10
+        self.MOVE_COST = -1
 
         # show
         self.fig = plt.figure()
@@ -66,16 +67,17 @@ class SearchEnv():
 
     # reset environment
     def reset(self, init=False):
-        self.target_map = np.zeros((self.map_size, self.map_size))
-        self.agent_pos.clear()
-        self.total_reward = 0
-        self.curr_reward = 0
-        self.obs.clear()
-        self.state = np.zeros((self.map_size, self.map_size, 2))
-        self.cumulative_joint_obs = np.array([])
-        self.target_list.clear()
-        self.time_step = 0
-        self.target_find = 0
+        if not init:
+            self.target_map = np.zeros((self.map_size, self.map_size))
+            self.agent_pos.clear()
+            self.total_reward = 0
+            self.curr_reward = 0
+            self.obs.clear()
+            self.state = np.zeros((self.map_size, self.map_size, 2))
+            self.cumulative_joint_obs = np.array([])
+            self.target_list.clear()
+            self.time_step = 0
+            self.target_find = 0
 
         # reset targets
         min_target_pos = self.map_size//4
@@ -243,7 +245,7 @@ class SearchEnv():
         if len(act_list) != self.n_agents:
             raise Exception('Act num mismatch agent')
         
-        reward = 0 
+        reward = self.MOVE_COST
         terminated = False
         info = ''
 

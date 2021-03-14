@@ -3,19 +3,23 @@ import os
 from common.rollout import RolloutWorker
 from agent.agent import Agents
 from common.replay_buffer import ReplayBuffer
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
 class Runner():
     def __init__(self, env, args):
         self.env = env
-
-        if args.alg.find('qmix') > -1:
+        if args.alg.find('qmix') > -1 or args.alg.find('dop') > -1:
             self.agents = Agents(args)
             self.rolloutWorker = RolloutWorker(env, self.agents, args)
-        
-        if args.learn and args.alg.find('qmix') > -1:
-            self.buffer = ReplayBuffer(args)
+        else:
+            raise Exception('No such algorithm')
+
+        if args.learn:
+            if args.alg.find('qmix') > -1 or args.alg.find('dop') > -1: # off-policy 
+                self.buffer = ReplayBuffer(args)
         self.args = args
         self.win_rates = []
         self.episode_rewards = []

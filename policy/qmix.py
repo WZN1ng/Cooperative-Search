@@ -1,5 +1,5 @@
 from network.base_net import RNN
-from network.qmix_net import QMixNet
+from network.mixer_net import MixerNet
 
 import torch
 import os 
@@ -12,6 +12,8 @@ class QMIX():
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
         self.obs_shape = args.obs_shape
+        self.seed = args.seed
+        self.tau = args.tau
         input_shape = self.obs_shape
 
         if args.last_action:
@@ -19,11 +21,18 @@ class QMIX():
         if args.reuse_network:
             input_shape += self.n_agents
 
+        # random seed 
+        torch.manual_seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
+        torch.cuda.manual_seed_all(self.seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = True
+
         # nets
         self.eval_rnn = RNN(input_shape, args)
         self.target_rnn = RNN(input_shape, args)
-        self.eval_qmix_net = QMixNet(args)
-        self.target_qmix_net = QMixNet(args)
+        self.eval_qmix_net = MixerNet(args)
+        self.target_qmix_net = MixerNet(args)
         self.args = args
         if self.args.cuda:
             self.eval_rnn.cuda()
@@ -50,6 +59,8 @@ class QMIX():
         self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
 
         self.eval_parameters = list(self.eval_qmix_net.parameters()) + list(self.eval_rnn.parameters())
+        self.target_parameters = list(self.target_qmix_net.parameters()) + list(self.target_rnn.parameters())
+        
         if args.optimizer == 'RMS':
             self.optimizer = torch.optim.RMSprop(self.eval_parameters, lr=args.lr)
         else:
@@ -57,7 +68,11 @@ class QMIX():
 
         self.eval_hidden = None
         self.target_hidden = None
-        print('Init alg QMIX')
+        print('Init alg QMIX(seed = {})'.format(self.seed))
+
+    def soft_update(self):
+        for param, target_param in zip(self.eval_parameters, self.target_parameters):
+            target_param.data.copy_(self.tau*param.data + (1-self.tau)*target_param.data)
 
     def learn(self, batch, max_episode_len, train_step, epsilon=None):
         episode_num = batch['o'].shape[0]
@@ -99,9 +114,10 @@ class QMIX():
         torch.nn.utils.clip_grad_norm_(self.eval_parameters, self.args.grad_norm_clip)
         self.optimizer.step()
 
-        if train_step > 0 and train_step % self.args.target_update_cycle == 0:
-            self.target_rnn.load_state_dict(self.eval_rnn.state_dict())
-            self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
+        # if train_step > 0 and train_step % self.args.target_update_cycle == 0:
+        #     self.target_rnn.load_state_dict(self.eval_rnn.state_dict())
+        #     self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
+        self.soft_update()
 
     def _get_inputs(self, batch, transition_idx):
         # 取出所有episode上该transition_idx的经验，u_onehot要取出所有，因为要用到上一条
@@ -165,11 +181,26 @@ class QMIX():
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         print('Model saved')
-        torch.save(self.eval_qmix_net.state_dict(), self.model_dir + '/' + num + '_qmix_net_params.pkl')
-        torch.save(self.eval_rnn.state_dict(),  self.model_dir + '/' + num + '_rnn_net_params.pkl')
+        idx = str(self.get_model_idx())
+        torch.save(self.eval_qmix_net.state_dict(), self.model_dir + '/' + idx + '_qmix_net_params.pkl')
+        torch.save(self.eval_rnn.state_dict(),  self.model_dir + '/' + idx + '_rnn_net_params.pkl')
+
+    def get_model_idx(self):
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+            return 0
+        idx = 0
+        models = os.listdir(self.model_dir)
+        for model in models:
+            num = int(model.split('_')[0])
+            idx = max(idx, num)
+        idx += 1
+        return idx
 
     def load_model(self, rnn_root, qmix_root):
         self.eval_rnn.load_state_dict(torch.load(rnn_root))
         self.eval_qmix_net.load_state_dict(torch.load(qmix_root))
         self.target_rnn.load_state_dict(self.eval_rnn.state_dict())
         self.target_qmix_net.load_state_dict(self.eval_qmix_net.state_dict())
+
+    

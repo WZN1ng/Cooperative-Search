@@ -1,16 +1,20 @@
 from policy.qmix import QMIX
+from policy.dop import DOP
 
 import numpy as np
 import torch
 
 class Agents():
     def __init__(self, args):
+        self.map_size = args.map_size
         self.n_actions = args.n_actions
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
         self.obs_shape = args.obs_shape
         if args.alg == 'qmix':
             self.policy = QMIX(args)
+        elif args.alg == 'dop':
+            self.policy = DOP(args)
         else:
             raise Exception("No such algorithm")
         self.args = args
@@ -18,6 +22,11 @@ class Agents():
     
     def choose_action(self, obs, last_action, agent_num, avail_actions, epsilon, evaluate=False):
         inputs = obs.copy()
+        # x,y --> [-10,10]
+        # inputs[:2] = (inputs[:2]-0.5*self.map_size)/(self.map_size/20)
+        # yaw --> [-3pi,3pi]
+        # inputs[2] = (inputs[2]-np.pi)*3
+        # print(inputs)
         avail_actions_ind = np.nonzero(avail_actions)[0]  # index of actions which can be choose
 
         # transform agent_num to onehot vector
@@ -28,6 +37,7 @@ class Agents():
             inputs = np.hstack((inputs, last_action))
         if self.args.reuse_network:
             inputs = np.hstack((inputs, agent_id))
+        # if self.args.alg == 'qmix':
         hidden_state = self.policy.eval_hidden[:, agent_num, :]
 
         # transform the shape of inputs from (42,) to (1,42)
@@ -35,10 +45,14 @@ class Agents():
         avail_actions = torch.tensor(avail_actions, dtype=torch.float32).unsqueeze(0)
         if self.args.cuda:
             inputs = inputs.cuda()  
+            # if self.args.alg == 'qmix':
             hidden_state = hidden_state.cuda()
 
         # get q value
-        q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state)
+        if self.args.alg == 'qmix':
+            q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state)
+        elif self.args.alg == 'dop':
+            q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_actor(inputs, hidden_state)
 
         # choose action from q value
         q_value[avail_actions == 0.0] = - float("inf")
