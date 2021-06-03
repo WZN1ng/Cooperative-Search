@@ -23,25 +23,55 @@ class MixerNet(nn.Module):
                                         nn.ReLU(),
                                         nn.Linear(args.qmix_hidden_dim, 1))
 
+        self.V = nn.Sequential(nn.Linear(args.state_shape, args.qmix_hidden_dim),
+                                nn.ReLU(),
+                                nn.Linear(args.qmix_hidden_dim, 1))
+
+    def k(self, states):
+        bs = states.size(0)
+        states = states.reshape(-1, self.args.state_shape)
+        w1 = torch.abs(self.hyper_w1(states))
+        w2 = torch.abs(self.hyper_w2(states))
+        w1 = w1.view(-1, self.args.n_agents, self.args.qmix_hidden_dim)
+        w2 = w2.view(-1, self.args.qmix_hidden_dim, 1)
+        k = torch.bmm(w1, w2).view(bs, -1, self.args.n_agents)
+        k = k / torch.sum(k, dim=2, keepdim=True)
+        return k
+
+    def b(self, states):
+        bs = states.size(0)
+        w2 = torch.abs(self.hyper_w2(states))
+        w2 = w2.view(-1, self.args.qmix_hidden_dim, 1)
+        b1 = self.hyper_b1(states)
+        b1 = b1.view(-1, 1, self.args.qmix_hidden_dim)
+        v = self.V(states).view(-1, 1, 1)
+        b = torch.bmm(b1, w2) + v
+        return b
+
     def forward(self, q_values, states):
         episode_num = q_values.size(0)
         q_values = q_values.view(-1, 1, self.args.n_agents)
         states = states.reshape(-1, self.args.state_shape)
 
         w1 = torch.abs(self.hyper_w1(states))
-        b1 = self.hyper_b1(states)
+        # b1 = self.hyper_b1(states)
 
         w1 = w1.view(-1, self.args.n_agents, self.args.qmix_hidden_dim)
-        b1 = b1.view(-1, 1, self.args.qmix_hidden_dim)
+        # b1 = b1.view(-1, 1, self.args.qmix_hidden_dim)
 
-        hidden = F.elu(torch.bmm(q_values, w1) + b1)
+        # hidden = F.elu(torch.bmm(q_values, w1) + b1)
 
         w2 = torch.abs(self.hyper_w2(states))
-        b2 = self.hyper_b2(states)
+        # b2 = self.hyper_b2(states)
 
         w2 = w2.view(-1, self.args.qmix_hidden_dim, 1)
-        b2 = b2.view(-1, 1, 1)
+        # b2 = b2.view(-1, 1, 1)
 
-        q_total = torch.bmm(hidden, w2) + b2
-        q_total = q_total.view(episode_num, -1, 1)
+        v = self.V(states).view(-1, 1, 1)
+        k = torch.bmm(w1, w2)
+        k = k / torch.sum(k, dim=1, keepdim=True)
+
+        y = torch.bmm(q_values, k)
+
+        q_total = y.view(episode_num, -1, 1)
         return q_total

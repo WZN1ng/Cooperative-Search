@@ -5,6 +5,7 @@ class OffPGCritic(nn.Module):
     def __init__(self, input_shape, args):
         super(OffPGCritic, self).__init__()
         self.args = args
+        self.input_shape = input_shape
 
         self.fc1 = nn.Linear(input_shape, args.offpg_hidden_dim)
         self.fc2 = nn.Linear(args.offpg_hidden_dim, args.offpg_hidden_dim)
@@ -12,6 +13,7 @@ class OffPGCritic(nn.Module):
         self.fc3 = nn.Linear(args.offpg_hidden_dim, args.n_actions)
 
     def forward(self, inputs):  # inputs (state, obs, ...)
+        # print('offpgnet:', inputs.shape, self.input_shape)
         x = f.relu(self.fc1(inputs))
         x = f.relu(self.fc2(x))
         v = self.fc_v(x)

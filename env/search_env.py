@@ -203,8 +203,10 @@ class SearchEnv():
     def get_obs(self):
         obs = np.array(self.obs)
         pos = np.array(self.agent_pos)
+        print(obs.shape, pos.shape)
         obs = obs.reshape(-1, self.obs_size*self.obs_size)
         obs = np.concatenate((obs, pos), axis=1)
+        print(obs.shape)
         return obs
 
     def _update_obs(self):

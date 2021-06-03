@@ -3,23 +3,28 @@ import threading
 
 
 class ReplayBuffer:
-    def __init__(self, args):
+    def __init__(self, args, buffer_size):
         self.args = args
         self.n_actions = self.args.n_actions
         self.n_agents = self.args.n_agents
         self.state_shape = self.args.state_shape
         self.obs_shape = self.args.obs_shape
-        self.size = self.args.buffer_size
+        self.size = buffer_size
         self.episode_limit = self.args.episode_limit
         # memory management
         self.current_idx = 0
         self.current_size = 0
+
+        if self.args.conv:
+            obs_shape = self.obs_shape + args.map_size**2
+        else:
+            obs_shape = self.obs_shape
         # create the buffer to store info
-        self.buffers = {'o': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
+        self.buffers = {'o': np.empty([self.size, self.episode_limit, self.n_agents, obs_shape]),
                         'u': np.empty([self.size, self.episode_limit, self.n_agents, 1]),
                         's': np.empty([self.size, self.episode_limit, self.state_shape]),
                         'r': np.empty([self.size, self.episode_limit, 1]),
-                        'o_next': np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
+                        'o_next': np.empty([self.size, self.episode_limit, self.n_agents, obs_shape]),
                         's_next': np.empty([self.size, self.episode_limit, self.state_shape]),
                         'avail_u': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
                         'avail_u_next': np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
@@ -29,6 +34,7 @@ class ReplayBuffer:
                         }
         # thread lock
         self.lock = threading.Lock()
+        print('Init ReplayBuffer({})'.format(self.size))
 
         # store the episode
     def store_episode(self, episode_batch):
@@ -47,10 +53,30 @@ class ReplayBuffer:
             self.buffers['u_onehot'][idxs] = episode_batch['u_onehot']
             self.buffers['padded'][idxs] = episode_batch['padded']
             self.buffers['terminated'][idxs] = episode_batch['terminated']
+    
+    def can_sample(self, batch_size):
+        if self.current_size >= batch_size:
+            return True
+        else:
+            return False
 
     def sample(self, batch_size):
         temp_buffer = {}
         idx = np.random.randint(0, self.current_size, batch_size)
+        for key in self.buffers.keys():
+            temp_buffer[key] = self.buffers[key][idx]
+        return temp_buffer
+
+    def sample_latest(self, batch_size):
+        assert self.can_sample(batch_size)
+        idx = []
+        if self.current_idx >= batch_size:
+            idx = list(range(self.current_idx-batch_size, self.current_idx))
+        else:
+            left = batch_size - self.current_idx
+            idx = list(range(self.current_size-left, self.current_size)) + list(range(self.current_idx))
+        idx = np.array(idx)
+        temp_buffer = {}
         for key in self.buffers.keys():
             temp_buffer[key] = self.buffers[key][idx]
         return temp_buffer
