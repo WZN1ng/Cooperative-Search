@@ -1,7 +1,7 @@
 # Cooperative-Search
 Multi-agent RL algorithms are applied to large-scale cooperative target searching mission.
 
-Y. Sun, Z. Wu, Q. Zhang, Z. Shi and Y. Zhong, "Multi-Agent Reinforcement Learning for Distributed Cooperative Targets Search," 2021 IEEE International Conference on Unmanned Systems (ICUS), Beijing, China, 2021, pp. 711-716, doi: 10.1109/ICUS52573.2021.9641124.
+_Y. Sun, Z. Wu, Q. Zhang, Z. Shi and Y. Zhong, "Multi-Agent Reinforcement Learning for Distributed Cooperative Targets Search," 2021 IEEE International Conference on Unmanned Systems (ICUS), Beijing, China, 2021, pp. 711-716, doi: 10.1109/ICUS52573.2021.9641124._
 
 ##### Env:
 1. flight_easy: Continuous search environment
